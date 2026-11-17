@@ -1,0 +1,11 @@
+{
+  "server_port": 8080,
+  "pc_ip": "192.168.1.50",
+  "chromecast_ip": "192.168.1.100",
+  "device_label": "CHROMECAST TV",
+  "weather": {
+    "city": "Ho Chi Minh City",
+    "latitude": 10.8231,
+    "longitude": 106.6297
+  }
+}

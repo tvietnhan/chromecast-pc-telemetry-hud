@@ -8,6 +8,27 @@ import socket
 import json
 import logging
 
+# Bỏ qua các file nhị phân Cython (.pyd) chưa được ký chứng chỉ số để khắc phục triệt để lỗi
+# "An Application Control policy has blocked this file" trên Windows 11 Smart App Control / WDAC
+class _ZeroconfPurePythonFinder:
+    @classmethod
+    def find_spec(cls, fullname, path=None, target=None):
+        if fullname.startswith('zeroconf'):
+            for p in (path or sys.path):
+                parts = fullname.split('.')
+                mod_name = parts[-1]
+                py_path = os.path.join(p, mod_name + '.py')
+                init_path = os.path.join(p, mod_name, '__init__.py')
+                if os.path.isfile(py_path):
+                    from importlib.util import spec_from_file_location
+                    return spec_from_file_location(fullname, py_path)
+                elif os.path.isfile(init_path):
+                    from importlib.util import spec_from_file_location
+                    return spec_from_file_location(fullname, init_path, submodule_search_locations=[os.path.join(p, mod_name)])
+        return None
+
+sys.meta_path.insert(0, _ZeroconfPurePythonFinder)
+
 # Tắt các cảnh báo retry không cần thiết từ các thiết bị khác trên mạng LAN (như Android TV box, TV khác)
 logging.getLogger('pychromecast').setLevel(logging.ERROR)
 

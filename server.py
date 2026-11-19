@@ -66,49 +66,168 @@ cached_stats = {
 
 stats_lock = threading.Lock()
 
+class IntelGPUWatcher:
+    """Thu thập thông số GPU tích hợp Intel qua Windows PDH & DXGI"""
+    def __init__(self):
+        self.pdh = None
+        self.query = None
+        self.counter = None
+        self.intel_luid = None
+        self.name = "Intel(R) UHD Graphics"
+        self._init_dxgi_and_pdh()
+
+    def _init_dxgi_and_pdh(self):
+        if os.name != 'nt':
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes, byref, c_void_p, POINTER, Structure, cast
+
+            class GUID(Structure):
+                _fields_ = [('Data1', wintypes.DWORD), ('Data2', wintypes.WORD), ('Data3', wintypes.WORD), ('Data4', ctypes.c_ubyte * 8)]
+            class LUID(Structure):
+                _fields_ = [('LowPart', wintypes.DWORD), ('HighPart', wintypes.LONG)]
+            class DXGI_ADAPTER_DESC(Structure):
+                _fields_ = [
+                    ('Description', wintypes.WCHAR * 128),
+                    ('VendorId', wintypes.UINT), ('DeviceId', wintypes.UINT), ('SubSysId', wintypes.UINT), ('Revision', wintypes.UINT),
+                    ('DedicatedVideoMemory', ctypes.c_size_t), ('DedicatedSystemMemory', ctypes.c_size_t), ('SharedSystemMemory', ctypes.c_size_t),
+                    ('AdapterLuid', LUID),
+                ]
+
+            IID_IDXGIFactory = GUID(0x7b7166ec, 0x21c7, 0x44ae, (ctypes.c_ubyte * 8)(0xb2, 0x1a, 0xc9, 0xae, 0x32, 0x1a, 0xe3, 0x69))
+            pFactory = c_void_p()
+            dxgi = ctypes.windll.dxgi
+            if dxgi.CreateDXGIFactory(byref(IID_IDXGIFactory), byref(pFactory)) == 0:
+                vtable = cast(cast(pFactory, POINTER(c_void_p)).contents, POINTER(c_void_p))
+                EnumAdapters = ctypes.WINFUNCTYPE(wintypes.HRESULT, c_void_p, wintypes.UINT, POINTER(c_void_p))(vtable[7])
+                for i in range(5):
+                    pAdapter = c_void_p()
+                    if EnumAdapters(pFactory, i, byref(pAdapter)) != 0:
+                        break
+                    vtable_adapter = cast(cast(pAdapter, POINTER(c_void_p)).contents, POINTER(c_void_p))
+                    GetDesc = ctypes.WINFUNCTYPE(wintypes.HRESULT, c_void_p, POINTER(DXGI_ADAPTER_DESC))(vtable_adapter[8])
+                    desc = DXGI_ADAPTER_DESC()
+                    GetDesc(pAdapter, byref(desc))
+                    if 'intel' in desc.Description.lower():
+                        self.name = desc.Description
+                        self.intel_luid = f"{desc.AdapterLuid.HighPart:08X}_{desc.AdapterLuid.LowPart:08X}"
+                        break
+
+            self.pdh = ctypes.windll.pdh
+            self.query = wintypes.HANDLE()
+            if self.pdh.PdhOpenQueryW(None, 0, byref(self.query)) == 0:
+                self.counter = wintypes.HANDLE()
+                if self.pdh.PdhAddEnglishCounterW(self.query, r'\GPU Engine(*)\Utilization Percentage', 0, byref(self.counter)) == 0:
+                    self.pdh.PdhCollectQueryData(self.query)
+        except Exception:
+            pass
+
+    def get_load(self):
+        if not self.pdh or not self.counter:
+            return 0.0
+        try:
+            import ctypes
+            from ctypes import wintypes, byref, Structure, cast
+            self.pdh.PdhCollectQueryData(self.query)
+
+            class PDH_FMT_COUNTERVALUE_DOUBLE(Structure):
+                _fields_ = [('CStatus', wintypes.DWORD), ('doubleValue', ctypes.c_double)]
+            class PDH_FMT_COUNTERVALUE_ITEM_W(Structure):
+                _fields_ = [('szName', wintypes.LPWSTR), ('FmtValue', PDH_FMT_COUNTERVALUE_DOUBLE)]
+
+            buffer_size = wintypes.DWORD(0)
+            item_count = wintypes.DWORD(0)
+            PDH_FMT_DOUBLE = 0x00000200
+            self.pdh.PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, byref(buffer_size), byref(item_count), None)
+
+            if buffer_size.value <= 0:
+                return 0.0
+
+            buf = (ctypes.c_byte * buffer_size.value)()
+            self.pdh.PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, byref(buffer_size), byref(item_count), buf)
+            items = cast(buf, POINTER(PDH_FMT_COUNTERVALUE_ITEM_W))
+
+            intel_sum = 0.0
+            for i in range(item_count.value):
+                name = items[i].szName.upper()
+                val = items[i].FmtValue.doubleValue
+                if val > 0.0:
+                    if self.intel_luid and self.intel_luid in name:
+                        intel_sum += val
+                    elif not self.intel_luid and ('3D' in name or 'VIDEODECODE' in name):
+                        intel_sum += val
+
+            return min(round(intel_sum, 1), 100.0)
+        except Exception:
+            return 0.0
+
+intel_watcher = IntelGPUWatcher()
+
 cached_gpu = {
-    "name": "RTX 3050 Laptop GPU",
+    "intel": {
+        "name": "Intel(R) UHD Graphics",
+        "load": 0.0,
+        "status": "Active"
+    },
+    "nvidia": {
+        "name": "RTX 3050 Laptop GPU",
+        "load": 0.0,
+        "mem_used": 0.0,
+        "mem_total": 4096.0,
+        "temp": 50.0,
+        "status": "Standby (Optimus)"
+    },
+    "name": "Intel + RTX 3050",
     "load": 0.0,
-    "mem_used": 0.0,
-    "mem_total": 4096.0,
-    "temp": 50.0,
-    "status": "Standby (Optimus)"
+    "temp": 50.0
 }
 last_gpu_query = 0
 
 def query_gpu():
-    """Lấy thông số GPU qua nvidia-smi với timeout 2.0s và cache 2s tránh giật lag vòng lặp"""
+    """Lấy thông số GPU đồng thời cho cả Intel iGPU và NVIDIA dGPU"""
     global cached_gpu, last_gpu_query
     now = time.time()
-    if now - last_gpu_query < 2.0:
-        return cached_gpu
 
-    last_gpu_query = now
-    try:
-        res = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=2.0
-        )
-        parts = [p.strip() for p in res.strip().split(",")]
-        gpu_name = parts[0].replace("NVIDIA GeForce ", "")
-        load = float(parts[1])
-        mem_u = float(parts[2])
-        mem_t = float(parts[3])
-        temp = float(parts[4])
-        is_standby = (load == 0.0 and mem_u == 0.0)
-        cached_gpu = {
-            "name": gpu_name,
-            "load": load,
-            "mem_used": mem_u,
-            "mem_total": mem_t,
-            "temp": temp,
-            "status": "Standby (Optimus)" if is_standby else "Active"
-        }
-        return cached_gpu
-    except Exception:
-        return cached_gpu
+    # 1. Đo Intel GPU qua PDH
+    intel_load = intel_watcher.get_load()
+
+    # 2. Đo NVIDIA GPU qua nvidia-smi (đệm 2s)
+    if now - last_gpu_query >= 2.0:
+        last_gpu_query = now
+        try:
+            res = subprocess.check_output(
+                ["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=2.0
+            )
+            parts = [p.strip() for p in res.strip().split(",")]
+            gpu_name = parts[0].replace("NVIDIA GeForce ", "")
+            load = float(parts[1])
+            mem_u = float(parts[2])
+            mem_t = float(parts[3])
+            temp = float(parts[4])
+            is_standby = (load == 0.0 and mem_u == 0.0)
+            cached_gpu["nvidia"] = {
+                "name": gpu_name,
+                "load": load,
+                "mem_used": mem_u,
+                "mem_total": mem_t,
+                "temp": temp,
+                "status": "Standby (Optimus)" if is_standby else "Active"
+            }
+            cached_gpu["temp"] = temp
+        except Exception:
+            pass
+
+    cached_gpu["intel"] = {
+        "name": intel_watcher.name,
+        "load": intel_load,
+        "status": "Active" if intel_load > 0 else "Idle"
+    }
+    cached_gpu["load"] = max(intel_load, cached_gpu["nvidia"]["load"])
+    return cached_gpu
 
 def background_collector():
     """Luồng chạy ngầm thu thập toàn bộ dữ liệu phần cứng và top 10 tiến trình"""

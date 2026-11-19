@@ -253,6 +253,71 @@
         .color-ram { color: #c084fc; }
         .color-ssd { color: #fbbf24; }
 
+        /* Khối hiển thị Dual GPU (2 dòng Intel & NVIDIA) */
+        .dual-gpu-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin: 2px 0 1px 0;
+        }
+        .gpu-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            padding: 3px 8px;
+        }
+        .gpu-row-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            overflow: hidden;
+        }
+        .gpu-badge-intel {
+            font-size: 0.62rem;
+            font-weight: 800;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.16);
+            padding: 1px 5px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+        .gpu-badge-nvidia {
+            font-size: 0.62rem;
+            font-weight: 800;
+            color: #10b981;
+            background: rgba(16, 185, 129, 0.16);
+            padding: 1px 5px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+        .gpu-name {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #cbd5e1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .gpu-row-right {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .gpu-load-num {
+            font-size: 1.18rem;
+            font-weight: 800;
+            line-height: 1;
+            letter-spacing: -0.5px;
+        }
+        .gpu-sub-text {
+            font-size: 0.68rem;
+            color: #94a3b8;
+        }
+
         .hw-chart-box {
             position: relative;
             height: 52px;
@@ -526,14 +591,37 @@
 
         <div class="hw-card card-gpu">
             <div class="hw-header">
-                <div class="hw-title">🎮 GPU Load</div>
-                <div class="hw-pill" id="gpu-pill">RTX 3050</div>
+                <div class="hw-title">🎮 Dual GPU Load</div>
+                <div class="hw-pill" id="gpu-pill">Intel + RTX 3050</div>
             </div>
-            <div class="hw-value-wrap">
-                <span class="hw-num color-gpu" id="gpu-val">0%</span>
-                <span style="font-size: 0.75rem; color: #94a3b8;" id="gpu-vram">0.0 / 4.0 GB</span>
+
+            <div class="dual-gpu-wrap">
+                <!-- DÒNG 1: GPU INTEL -->
+                <div class="gpu-row">
+                    <div class="gpu-row-left">
+                        <span class="gpu-badge-intel">INTEL</span>
+                        <span class="gpu-name" id="gpu-intel-name">UHD Graphics</span>
+                    </div>
+                    <div class="gpu-row-right">
+                        <span class="gpu-load-num" id="gpu-intel-val" style="color: #38bdf8;">0%</span>
+                        <span class="gpu-sub-text" id="gpu-intel-sub">iGPU &bull; Live</span>
+                    </div>
+                </div>
+
+                <!-- DÒNG 2: GPU NVIDIA -->
+                <div class="gpu-row">
+                    <div class="gpu-row-left">
+                        <span class="gpu-badge-nvidia">NVIDIA</span>
+                        <span class="gpu-name" id="gpu-nvidia-name">RTX 3050</span>
+                    </div>
+                    <div class="gpu-row-right">
+                        <span class="gpu-load-num" id="gpu-nvidia-val" style="color: #10b981;">0%</span>
+                        <span class="gpu-sub-text" id="gpu-nvidia-sub">0 GB &bull; Standby</span>
+                    </div>
+                </div>
             </div>
-            <div class="hw-chart-box">
+
+            <div class="hw-chart-box" style="height: 38px;">
                 <canvas id="chartGpu"></canvas>
             </div>
         </div>
@@ -930,28 +1018,39 @@
                     pushData(chartCpu, cpuPercent);
                 }
                 if (data.gpu) {
-                    const gpuLoad = Math.round(data.gpu.load);
-                    document.getElementById('gpu-val').textContent = `${gpuLoad}%`;
-
-                    // Hiển thị trạng thái VRAM: nếu GPU đang ngủ (Optimus) thì hiển thị rõ để người dùng biết
-                    let vramText = `${(data.gpu.mem_used / 1024).toFixed(1)} / ${(data.gpu.mem_total / 1024).toFixed(1)} GB`;
-                    if (data.gpu.status && data.gpu.status.includes('Standby')) {
-                        vramText = `0 GB (Sleep / Optimus)`;
-                    }
-                    document.getElementById('gpu-vram').textContent = vramText;
-
-                    // Cập nhật nhãn tên GPU
-                    const gpuPillEl = document.getElementById('gpu-pill');
-                    if (gpuPillEl && data.gpu.name) {
-                        gpuPillEl.textContent = data.gpu.name.replace(' Laptop GPU', '').replace('GeForce ', '');
+                    // DÒNG 1: INTEL GPU
+                    if (data.gpu.intel) {
+                        const intelLoad = Math.round(data.gpu.intel.load || 0);
+                        document.getElementById('gpu-intel-val').textContent = `${intelLoad}%`;
+                        if (data.gpu.intel.name) {
+                            document.getElementById('gpu-intel-name').textContent = data.gpu.intel.name.replace('Intel(R) ', '');
+                        }
+                        document.getElementById('gpu-intel-sub').innerHTML = intelLoad > 0 ? `${intelLoad}% &bull; Active` : `Idle &bull; iGPU`;
                     }
 
-                    // Đồng bộ nhiệt độ GPU ở Header
-                    if (data.gpu.temp) {
-                        const gpuTempEl = document.getElementById('gpu-temp');
-                        if (gpuTempEl) gpuTempEl.textContent = `${Math.round(data.gpu.temp)}°C`;
+                    // DÒNG 2: NVIDIA GPU
+                    if (data.gpu.nvidia) {
+                        const nvidiaLoad = Math.round(data.gpu.nvidia.load || 0);
+                        document.getElementById('gpu-nvidia-val').textContent = `${nvidiaLoad}%`;
+                        if (data.gpu.nvidia.name) {
+                            document.getElementById('gpu-nvidia-name').textContent = data.gpu.nvidia.name.replace(' Laptop GPU', '').replace('GeForce ', '');
+                        }
+
+                        let nvSub = `${(data.gpu.nvidia.mem_used / 1024).toFixed(1)} / ${(data.gpu.nvidia.mem_total / 1024).toFixed(1)} GB`;
+                        if (data.gpu.nvidia.status && data.gpu.nvidia.status.includes('Standby')) {
+                            nvSub = `0 GB &bull; Standby`;
+                        }
+                        document.getElementById('gpu-nvidia-sub').innerHTML = nvSub;
+
+                        if (data.gpu.nvidia.temp) {
+                            const gpuTempEl = document.getElementById('gpu-temp');
+                            if (gpuTempEl) gpuTempEl.textContent = `${Math.round(data.gpu.nvidia.temp)}°C`;
+                        }
                     }
-                    pushData(chartGpu, gpuLoad);
+
+                    // Biểu đồ sóng theo GPU có mức tải cao nhất
+                    const chartLoad = data.gpu.load !== undefined ? data.gpu.load : Math.max(data.gpu.intel?.load || 0, data.gpu.nvidia?.load || 0);
+                    pushData(chartGpu, chartLoad);
                 }
                 if (data.ram) {
                     document.getElementById('ram-val').textContent = `${Math.round(data.ram.percent)}%`;
@@ -1022,8 +1121,10 @@
                 document.getElementById('cpu-sub').textContent = `${(2.2 + (vCpu/100)*1.1).toFixed(2)} GHz`;
 
                 pushData(chartGpu, vGpu);
-                document.getElementById('gpu-val').textContent = `${Math.round(vGpu)}%`;
-                document.getElementById('gpu-vram').textContent = `${(0.5 + (vGpu/100)*1.2).toFixed(1)} / 4.0 GB`;
+                document.getElementById('gpu-intel-val').textContent = `${Math.round(vGpu)}%`;
+                document.getElementById('gpu-intel-sub').innerHTML = `${Math.round(vGpu)}% &bull; Display`;
+                document.getElementById('gpu-nvidia-val').textContent = `0%`;
+                document.getElementById('gpu-nvidia-sub').innerHTML = `0 GB &bull; Standby`;
 
                 pushData(chartRam, vRam);
                 document.getElementById('ram-val').textContent = `${Math.round(vRam)}%`;

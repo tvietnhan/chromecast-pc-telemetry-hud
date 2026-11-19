@@ -964,13 +964,23 @@
         }
 
         let isLiveTelemetry = false;
+        let consecutiveErrors = 0;
+        let wasOffline = false;
 
         async function fetchLiveTelemetry() {
             try {
                 const res = await fetch('/api/stats', { cache: 'no-store' });
-                if (!res.ok) return false;
+                if (!res.ok) throw new Error('HTTP ' + res.status);
                 const data = await res.json();
                 isLiveTelemetry = true;
+
+                // Nếu vừa phục hồi kết nối từ trạng thái offline -> tự động reload trang để làm mới toàn diện
+                if (wasOffline) {
+                    console.log('Server back online, auto-refreshing dashboard...');
+                    window.location.reload(true);
+                    return true;
+                }
+                consecutiveErrors = 0;
 
                 // Cập nhật thông tin Header từ cấu hình
                 if (data.config) {
@@ -1071,6 +1081,14 @@
                 return true;
             } catch (err) {
                 isLiveTelemetry = false;
+                consecutiveErrors++;
+                if (consecutiveErrors >= 3) {
+                    wasOffline = true;
+                    const titleEl = document.getElementById('hud-title');
+                    if (titleEl) {
+                        titleEl.innerHTML = `⚠️ MẤT KẾT NỐI ĐẾN PC HOST &bull; ĐANG CHỜ KẾT NỐI LẠI...`;
+                    }
+                }
                 return false;
             }
         }

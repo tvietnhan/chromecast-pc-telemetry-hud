@@ -107,12 +107,25 @@ if __name__ == "__main__":
 
     print(f"⏳ Đang chờ thiết bị '{cast.name}' phản hồi...")
     cast.wait(timeout=10)
+
+    # 3. Thoát phiên ứng dụng cũ nếu có để đảm bảo Chromecast luôn mở phiên mới tinh
+    if getattr(cast, 'app_id', None) == DASHCAST_APP_ID:
+        print("🔄 Phát hiện phiên DashCast cũ trên TV, đang khởi động lại ứng dụng...")
+        try:
+            cast.quit_app()
+            time.sleep(1.0)
+            cast.wait(timeout=5)
+        except Exception:
+            pass
+
     dash_controller = DashCastController()
     cast.register_handler(dash_controller)
 
-    # 3. Cast Dashboard URL lên TV
-    print(f"📺 Đang truyền Live Dashboard lên màn hình TV: {dashboard_url}")
-    dash_controller.load_url(dashboard_url)
+    # 4. Cast Dashboard URL lên TV (Kèm timestamp session chống cache để Chromecast luôn refresh)
+    session_id = int(time.time())
+    dashboard_url_fresh = f"{dashboard_url}?t={session_id}"
+    print(f"📺 Đang truyền Live Dashboard lên màn hình TV: {dashboard_url_fresh}")
+    dash_controller.load_url(dashboard_url_fresh, force=True)
 
     print("🎉 Truyền thành công! Dashboard đang hiển thị Realtime trên TV.")
     print("👉 Nhấn Ctrl + C để dừng dịch vụ.")
@@ -121,6 +134,12 @@ if __name__ == "__main__":
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\nĐang dừng dịch vụ và ngắt kết nối...")
+        print("\n🛑 Đang dừng dịch vụ...")
+        try:
+            print("📺 Đang thoát ứng dụng trên Chromecast về màn hình chờ...")
+            cast.quit_app()
+            time.sleep(0.5)
+        except Exception:
+            pass
         if browser:
             pychromecast.discovery.stop_discovery(browser)

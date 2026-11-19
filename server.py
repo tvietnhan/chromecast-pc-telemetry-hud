@@ -381,18 +381,31 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
 
+    def end_headers(self):
+        # Đảm bảo trình duyệt Chromecast không bao giờ cache file HTML / JS / JSON
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
     def do_GET(self):
-        if self.path == "/api/stats":
+        # Tách bỏ query params (như ?t=1732057123) để phục vụ đúng file và API
+        path_clean = self.path.split("?")[0]
+        if path_clean == "/api/stats":
             with stats_lock:
                 payload = json.dumps(cached_stats).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(payload)
         else:
-            super().do_GET()
+            old_path = self.path
+            self.path = path_clean
+            try:
+                super().do_GET()
+            finally:
+                self.path = old_path
 
     def log_message(self, format, *args):
         pass

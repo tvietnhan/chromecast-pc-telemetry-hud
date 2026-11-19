@@ -439,6 +439,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         # Tách bỏ query params (như ?t=1732057123) để phục vụ đúng file và API
         path_clean = self.path.split("?")[0]
+        if path_clean in ("", "/"):
+            path_clean = "/dashboard.html"
         if path_clean == "/api/stats":
             with stats_lock:
                 payload = json.dumps(cached_stats).encode("utf-8")

@@ -6,6 +6,11 @@ import os
 import time
 import socket
 import json
+import logging
+
+# Tắt các cảnh báo retry không cần thiết từ các thiết bị khác trên mạng LAN (như Android TV box, TV khác)
+logging.getLogger('pychromecast').setLevel(logging.ERROR)
+
 import pychromecast
 from pychromecast.controllers import BaseController
 from server import DashboardHandler, background_collector, load_config, get_local_ip
@@ -53,15 +58,20 @@ if __name__ == "__main__":
     dashboard_url = f"http://{PC_IP}:{PORT}/dashboard.html"
     print(f"📡 HTTP Server đang hoạt động tại: {dashboard_url}")
 
-    # 2. Tìm kiếm Chromecast (theo IP cấu hình hoặc tự động quét)
+    # 2. Tìm kiếm Chromecast (ưu tiên chính xác IP đã cấu hình)
     cast = None
     browser = None
 
     if CHROMECAST_IP:
         print(f"🔍 Đang kết nối tới Chromecast tại {CHROMECAST_IP}...")
         chromecasts, browser = pychromecast.get_chromecasts(known_hosts=[CHROMECAST_IP])
-        if chromecasts:
+        target_casts = [c for c in chromecasts if getattr(c.cast_info, 'host', '') == CHROMECAST_IP]
+        if target_casts:
+            cast = target_casts[0]
+            print(f"✅ Đã tìm thấy đúng thiết bị: {cast.name} ({cast.cast_info.host})")
+        elif chromecasts:
             cast = chromecasts[0]
+            print(f"⚠️ Không khớp IP chính xác, chọn thiết bị đầu tiên: {cast.name} ({cast.cast_info.host})")
     else:
         print("🔍 Không có chromecast_ip trong config.json, đang tự động quét mạng LAN...")
         chromecasts, browser = pychromecast.get_chromecasts()
@@ -74,7 +84,8 @@ if __name__ == "__main__":
         print("💡 Gợi ý: Hãy kiểm tra IP của Chromecast và điền vào file config.json.")
         sys.exit(1)
 
-    cast.wait()
+    print(f"⏳ Đang chờ thiết bị '{cast.name}' phản hồi...")
+    cast.wait(timeout=10)
     dash_controller = DashCastController()
     cast.register_handler(dash_controller)
 

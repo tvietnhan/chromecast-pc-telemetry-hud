@@ -66,22 +66,36 @@ cached_stats = {
 
 stats_lock = threading.Lock()
 
-class IntelGPUWatcher:
-    """Thu thập thông số GPU tích hợp Intel qua Windows PDH & DXGI"""
-    def __init__(self):
-        self.pdh = None
-        self.query = None
-        self.counter = None
-        self.intel_luid = None
-        self.name = "Intel(R) UHD Graphics"
-        self._init_dxgi_and_pdh()
+def format_speed(bytes_per_sec):
+    """Định dạng tốc độ truyền dữ liệu mạng linh hoạt (B/s, KB/s, MB/s)"""
+    if bytes_per_sec >= 1024 * 1024:
+        return f"{bytes_per_sec / (1024 * 1024):.2f} MB/s"
+    elif bytes_per_sec >= 1024:
+        return f"{bytes_per_sec / 1024:.1f} KB/s"
+    elif bytes_per_sec > 0:
+        return f"{int(bytes_per_sec)} B/s"
+    else:
+        return "0.0 KB/s"
 
-    def _init_dxgi_and_pdh(self):
+class D3DKMTWatcher:
+    """Thu thập thông số GPU tích hợp Intel và NVIDIA độc lập qua Windows D3DKMT & DXGI"""
+    def __init__(self):
+        self.gdi32 = None
+        self.adapters = []
+        self.last_time = time.time()
+        self.last_running_times = {}
+        self.intel_name = "Intel(R) UHD Graphics"
+        self.nvidia_name = "NVIDIA GeForce RTX 3050 Laptop GPU"
+        self._init_adapters()
+
+    def _init_adapters(self):
         if os.name != 'nt':
             return
         try:
             import ctypes
             from ctypes import wintypes, byref, c_void_p, POINTER, Structure, cast
+
+            self.gdi32 = ctypes.windll.gdi32
 
             class GUID(Structure):
                 _fields_ = [('Data1', wintypes.DWORD), ('Data2', wintypes.WORD), ('Data3', wintypes.WORD), ('Data4', ctypes.c_ubyte * 8)]
@@ -109,66 +123,89 @@ class IntelGPUWatcher:
                     GetDesc = ctypes.WINFUNCTYPE(wintypes.HRESULT, c_void_p, POINTER(DXGI_ADAPTER_DESC))(vtable_adapter[8])
                     desc = DXGI_ADAPTER_DESC()
                     GetDesc(pAdapter, byref(desc))
-                    if 'intel' in desc.Description.lower():
-                        self.name = desc.Description
-                        self.intel_luid = f"{desc.AdapterLuid.HighPart:08X}_{desc.AdapterLuid.LowPart:08X}"
-                        break
-
-            self.pdh = ctypes.windll.pdh
-            self.query = wintypes.HANDLE()
-            if self.pdh.PdhOpenQueryW(None, 0, byref(self.query)) == 0:
-                self.counter = wintypes.HANDLE()
-                if self.pdh.PdhAddEnglishCounterW(self.query, r'\GPU Engine(*)\Utilization Percentage', 0, byref(self.counter)) == 0:
-                    self.pdh.PdhCollectQueryData(self.query)
+                    name = desc.Description.strip()
+                    if not name or "Basic Render" in name:
+                        continue
+                    is_intel = "intel" in name.lower()
+                    is_nvidia = "nvidia" in name.lower() or "geforce" in name.lower()
+                    if is_intel:
+                        self.intel_name = name
+                    if is_nvidia:
+                        self.nvidia_name = name
+                    self.adapters.append({
+                        "name": name,
+                        "luid_low": desc.AdapterLuid.LowPart,
+                        "luid_high": desc.AdapterLuid.HighPart,
+                        "is_intel": is_intel,
+                        "is_nvidia": is_nvidia
+                    })
+                    t = self._query_running_time(desc.AdapterLuid.LowPart, desc.AdapterLuid.HighPart)
+                    self.last_running_times[desc.AdapterLuid.LowPart] = t
+            self.last_time = time.time()
         except Exception:
             pass
 
-    def get_load(self):
-        if not self.pdh or not self.counter:
-            return 0.0
+    def _query_running_time(self, luid_low, luid_high=0):
+        if not self.gdi32:
+            return 0
         try:
             import ctypes
-            from ctypes import wintypes, byref, Structure, cast
-            self.pdh.PdhCollectQueryData(self.query)
-
-            class PDH_FMT_COUNTERVALUE_DOUBLE(Structure):
-                _fields_ = [('CStatus', wintypes.DWORD), ('doubleValue', ctypes.c_double)]
-            class PDH_FMT_COUNTERVALUE_ITEM_W(Structure):
-                _fields_ = [('szName', wintypes.LPWSTR), ('FmtValue', PDH_FMT_COUNTERVALUE_DOUBLE)]
-
-            buffer_size = wintypes.DWORD(0)
-            item_count = wintypes.DWORD(0)
-            PDH_FMT_DOUBLE = 0x00000200
-            self.pdh.PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, byref(buffer_size), byref(item_count), None)
-
-            if buffer_size.value <= 0:
-                return 0.0
-
-            buf = (ctypes.c_byte * buffer_size.value)()
-            self.pdh.PdhGetFormattedCounterArrayW(self.counter, PDH_FMT_DOUBLE, byref(buffer_size), byref(item_count), buf)
-            items = cast(buf, POINTER(PDH_FMT_COUNTERVALUE_ITEM_W))
-
-            intel_sum = 0.0
-            for i in range(item_count.value):
-                name = items[i].szName.upper()
-                val = items[i].FmtValue.doubleValue
-                if val > 0.0:
-                    if self.intel_luid and self.intel_luid in name:
-                        intel_sum += val
-                    elif not self.intel_luid and ('3D' in name or 'VIDEODECODE' in name):
-                        intel_sum += val
-
-            return min(round(intel_sum, 1), 100.0)
+            from ctypes import wintypes, Structure, c_int64, byref
+            class LUID(Structure):
+                _fields_ = [('LowPart', wintypes.DWORD), ('HighPart', wintypes.LONG)]
+            class D3DKMT_QUERYSTATISTICS_QUERY_NODE(Structure):
+                _fields_ = [('NodeId', wintypes.ULONG)]
+            class D3DKMT_QUERYSTATISTICS(Structure):
+                _fields_ = [
+                    ('Type', wintypes.UINT),
+                    ('AdapterLuid', LUID),
+                    ('ProcessHandle', wintypes.HANDLE),
+                    ('QueryResultRaw', wintypes.BYTE * 1024),
+                    ('QueryNode', D3DKMT_QUERYSTATISTICS_QUERY_NODE)
+                ]
+            stats = D3DKMT_QUERYSTATISTICS()
+            stats.Type = 5 # D3DKMT_QUERYSTATISTICS_NODE
+            stats.AdapterLuid.LowPart = luid_low
+            stats.AdapterLuid.HighPart = luid_high
+            stats.QueryNode.NodeId = 0
+            if self.gdi32.D3DKMTQueryStatistics(byref(stats)) == 0:
+                return (c_int64 * 8).from_buffer_copy(bytes(stats.QueryResultRaw[:64]))[0]
         except Exception:
-            return 0.0
+            pass
+        return 0
 
-intel_watcher = IntelGPUWatcher()
+    def get_loads(self):
+        now = time.time()
+        dt = max(now - self.last_time, 0.5)
+        self.last_time = now
+
+        intel_load = 0.0
+        nvidia_load = 0.0
+
+        for adapter in self.adapters:
+            low = adapter["luid_low"]
+            high = adapter["luid_high"]
+            curr_t = self._query_running_time(low, high)
+            prev_t = self.last_running_times.get(low, curr_t)
+            self.last_running_times[low] = curr_t
+
+            diff = max(curr_t - prev_t, 0)
+            load = min(round((diff / (dt * 10000000.0)) * 100.0, 1), 100.0)
+
+            if adapter["is_intel"]:
+                intel_load = load
+            elif adapter["is_nvidia"]:
+                nvidia_load = load
+
+        return intel_load, nvidia_load
+
+gpu_watcher = D3DKMTWatcher()
 
 cached_gpu = {
     "intel": {
         "name": "Intel(R) UHD Graphics",
         "load": 0.0,
-        "status": "Active"
+        "status": "Display • iGPU"
     },
     "nvidia": {
         "name": "RTX 3050 Laptop GPU",
@@ -189,10 +226,10 @@ def query_gpu():
     global cached_gpu, last_gpu_query
     now = time.time()
 
-    # 1. Đo Intel GPU qua PDH
-    intel_load = intel_watcher.get_load()
+    # 1. Đo mức tải GPU tức thì qua Windows D3DKMT
+    intel_load, nvidia_kmt_load = gpu_watcher.get_loads()
 
-    # 2. Đo NVIDIA GPU qua nvidia-smi (đệm 2s)
+    # 2. Đo NVIDIA GPU chi tiết qua nvidia-smi (VRAM, Nhiệt độ) mỗi 2 giây
     if now - last_gpu_query >= 2.0:
         last_gpu_query = now
         try:
@@ -204,27 +241,28 @@ def query_gpu():
             )
             parts = [p.strip() for p in res.strip().split(",")]
             gpu_name = parts[0].replace("NVIDIA GeForce ", "")
-            load = float(parts[1])
+            smi_load = float(parts[1])
             mem_u = float(parts[2])
             mem_t = float(parts[3])
             temp = float(parts[4])
-            is_standby = (load == 0.0 and mem_u == 0.0)
+            final_nvidia_load = max(nvidia_kmt_load, smi_load)
+            is_standby = (final_nvidia_load == 0.0 and mem_u == 0.0)
             cached_gpu["nvidia"] = {
                 "name": gpu_name,
-                "load": load,
+                "load": final_nvidia_load,
                 "mem_used": mem_u,
                 "mem_total": mem_t,
                 "temp": temp,
-                "status": "Standby (Optimus)" if is_standby else "Active"
+                "status": "Standby (Optimus)" if is_standby else f"{round(mem_u/1024, 1)} GB • Active"
             }
             cached_gpu["temp"] = temp
         except Exception:
-            pass
+            cached_gpu["nvidia"]["load"] = nvidia_kmt_load
 
     cached_gpu["intel"] = {
-        "name": intel_watcher.name,
+        "name": gpu_watcher.intel_name,
         "load": intel_load,
-        "status": "Active" if intel_load > 0 else "Idle"
+        "status": f"{intel_load}% • Active" if intel_load > 0 else "Display • iGPU"
     }
     cached_gpu["load"] = max(intel_load, cached_gpu["nvidia"]["load"])
     return cached_gpu
@@ -247,10 +285,14 @@ def background_collector():
 
             # 1. Network toàn hệ thống
             curr_net = psutil.net_io_counters()
-            dl_b = (curr_net.bytes_recv - prev_net.bytes_recv) / dt
-            ul_b = (curr_net.bytes_sent - prev_net.bytes_sent) / dt
-            dl_mb = round(dl_b / (1024 * 1024), 2)
-            ul_mb = round(ul_b / (1024 * 1024), 2)
+            dl_b = max((curr_net.bytes_recv - prev_net.bytes_recv) / dt, 0.0)
+            ul_b = max((curr_net.bytes_sent - prev_net.bytes_sent) / dt, 0.0)
+            dl_kb = round(dl_b / 1024.0, 1)
+            ul_kb = round(ul_b / 1024.0, 1)
+            dl_mb = round(dl_b / (1024.0 * 1024.0), 3)
+            ul_mb = round(ul_b / (1024.0 * 1024.0), 3)
+            dl_str = format_speed(dl_b)
+            ul_str = format_speed(ul_b)
             prev_net = curr_net
             prev_time = now
 
@@ -359,8 +401,14 @@ def background_collector():
                         "free": f"{disk_free_gb} GB"
                     },
                     "network": {
+                        "download_b": round(dl_b),
+                        "upload_b": round(ul_b),
+                        "download_kb": dl_kb,
+                        "upload_kb": ul_kb,
                         "download_mb": dl_mb,
-                        "upload_mb": ul_mb
+                        "upload_mb": ul_mb,
+                        "download_str": dl_str,
+                        "upload_str": ul_str
                     },
                     "processes": top_10_procs,
                     "config": {

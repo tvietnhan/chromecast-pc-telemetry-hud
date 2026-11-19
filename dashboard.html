@@ -685,8 +685,8 @@
                 </div>
                 <div class="net-body">
                     <div class="net-speed-wrap">
-                        <div class="net-speed color-dl" id="dl-speed">0.00 MB/s</div>
-                        <div class="net-sub">= Tổng các App cộng lại</div>
+                        <div class="net-speed color-dl" id="dl-speed">0.0 KB/s</div>
+                        <div class="net-sub">Card mạng Real-time (LAN/Wi-Fi)</div>
                     </div>
                     <div class="net-chart-box">
                         <canvas id="chartDl"></canvas>
@@ -701,8 +701,8 @@
                 </div>
                 <div class="net-body">
                     <div class="net-speed-wrap">
-                        <div class="net-speed color-ul" id="ul-speed">0.00 MB/s</div>
-                        <div class="net-sub">= Tổng các App cộng lại</div>
+                        <div class="net-speed color-ul" id="ul-speed">0.0 KB/s</div>
+                        <div class="net-sub">Card mạng Real-time (LAN/Wi-Fi)</div>
                     </div>
                     <div class="net-chart-box">
                         <canvas id="chartUl"></canvas>
@@ -719,7 +719,7 @@
                     <span class="proc-badge" id="active-proc-count">Top 10 Apps</span>
                 </div>
                 <div style="font-size: 0.75rem; color: #64748b;">
-                    Sắp xếp theo RAM &bull; Realtime Sync
+                    Top 10 App ngốn RAM nhất &bull; I/O Đĩa & CPU
                 </div>
             </div>
 
@@ -729,8 +729,8 @@
                         <tr>
                             <th style="width: 32%;">Ứng dụng</th>
                             <th style="width: 12%;">PID</th>
-                            <th style="width: 18%;">📥 Download</th>
-                            <th style="width: 18%;">📤 Upload</th>
+                            <th style="width: 18%;">📥 I/O Đọc</th>
+                            <th style="width: 18%;">📤 I/O Ghi</th>
                             <th style="width: 10%;">CPU</th>
                             <th style="width: 10%;">RAM</th>
                         </tr>
@@ -861,8 +861,8 @@
         const chartGpuNvidia = new Sparkline('chartGpuNvidia', '#10b981', 'rgba(16, 185, 129, 0.35)', 100);
         const chartRam = new Sparkline('chartRam', '#c084fc', 'rgba(192, 132, 252, 0.35)', 100);
         const chartSsd = new Sparkline('chartSsd', '#fbbf24', 'rgba(251, 191, 36, 0.35)', 100);
-        const chartDl = new Sparkline('chartDl', '#06b6d4', 'rgba(6, 182, 212, 0.35)', 50);
-        const chartUl = new Sparkline('chartUl', '#ec4899', 'rgba(236, 72, 153, 0.35)', 20);
+        const chartDl = new Sparkline('chartDl', '#06b6d4', 'rgba(6, 182, 212, 0.35)', 100);
+        const chartUl = new Sparkline('chartUl', '#ec4899', 'rgba(236, 72, 153, 0.35)', 100);
 
         window.addEventListener('resize', () => {
             chartCpu.resize();
@@ -1094,10 +1094,22 @@
                     pushData(chartSsd, data.disk.percent);
                 }
                 if (data.network) {
-                    document.getElementById('dl-speed').textContent = `${data.network.download_mb.toFixed(2)} MB/s`;
-                    document.getElementById('ul-speed').textContent = `${data.network.upload_mb.toFixed(2)} MB/s`;
-                    pushData(chartDl, data.network.download_mb * 5);
-                    pushData(chartUl, data.network.upload_mb * 8);
+                    const dlKb = data.network.download_kb !== undefined ? data.network.download_kb : (data.network.download_mb * 1024);
+                    const ulKb = data.network.upload_kb !== undefined ? data.network.upload_kb : (data.network.upload_mb * 1024);
+
+                    const dlText = data.network.download_str || (dlKb >= 1024 ? `${(dlKb / 1024).toFixed(2)} MB/s` : `${dlKb.toFixed(1)} KB/s`);
+                    const ulText = data.network.upload_str || (ulKb >= 1024 ? `${(ulKb / 1024).toFixed(2)} MB/s` : `${ulKb.toFixed(1)} KB/s`);
+
+                    document.getElementById('dl-speed').textContent = dlText;
+                    document.getElementById('ul-speed').textContent = ulText;
+
+                    // Tính toán độ nhấp nhô của sóng mạng:
+                    // 10 KB/s -> ~25%, 100 KB/s -> ~45%, 1 MB/s -> ~68%, 10 MB/s -> ~90%
+                    const dlWave = dlKb > 0 ? Math.min(Math.log10(dlKb + 1) * 22, 100) : 0;
+                    const ulWave = ulKb > 0 ? Math.min(Math.log10(ulKb + 1) * 22, 100) : 0;
+
+                    pushData(chartDl, dlWave);
+                    pushData(chartUl, ulWave);
                 }
                 return true;
             } catch (err) {

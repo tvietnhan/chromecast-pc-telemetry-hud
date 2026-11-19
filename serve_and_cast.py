@@ -30,7 +30,8 @@ class _ZeroconfPurePythonFinder:
 sys.meta_path.insert(0, _ZeroconfPurePythonFinder)
 
 # Tắt các cảnh báo retry không cần thiết từ các thiết bị khác trên mạng LAN (như Android TV box, TV khác)
-logging.getLogger('pychromecast').setLevel(logging.ERROR)
+logging.getLogger('pychromecast').setLevel(logging.CRITICAL)
+logging.getLogger('pychromecast.socket_client').setLevel(logging.CRITICAL)
 
 import pychromecast
 from pychromecast.controllers import BaseController
@@ -85,20 +86,57 @@ if __name__ == "__main__":
 
     if CHROMECAST_IP:
         print(f"🔍 Đang kết nối tới Chromecast tại {CHROMECAST_IP}...")
-        chromecasts, browser = pychromecast.get_chromecasts(known_hosts=[CHROMECAST_IP])
-        target_casts = [c for c in chromecasts if getattr(c.cast_info, 'host', '') == CHROMECAST_IP]
-        if target_casts:
-            cast = target_casts[0]
-            print(f"✅ Đã tìm thấy đúng thiết bị: {cast.name} ({cast.cast_info.host})")
-        elif chromecasts:
-            cast = chromecasts[0]
-            print(f"⚠️ Không khớp IP chính xác, chọn thiết bị đầu tiên: {cast.name} ({cast.cast_info.host})")
+        # Sử dụng discover_chromecasts để phát hiện thiết bị mà không tự động mở socket tới mọi máy khác trên mạng
+        devices, browser = pychromecast.discovery.discover_chromecasts(
+            known_hosts=[CHROMECAST_IP],
+            timeout=3.0
+        )
+        # Chỉ nhắm tới thiết bị có đúng IP cần tìm
+        target_dev = next((d for d in devices if getattr(d, 'host', '') == CHROMECAST_IP), None)
+        if target_dev:
+            try:
+                cast = pychromecast.get_chromecast_from_cast_info(
+                    target_dev,
+                    browser.zc,
+                    tries=3,
+                    timeout=5,
+                    retry_wait=1.0
+                )
+                print(f"✅ Đã tìm thấy đúng thiết bị: {cast.name} ({target_dev.host})")
+            except Exception as e:
+                pass
+
+        # Fallback kết nối thẳng theo Host nếu mDNS timeout
+        if not cast:
+            try:
+                from uuid import uuid4
+                cast = pychromecast.get_chromecast_from_host(
+                    (CHROMECAST_IP, 8009, uuid4(), "Chromecast", "Chromecast"),
+                    tries=3,
+                    timeout=5,
+                    retry_wait=1.0
+                )
+                print(f"✅ Kết nối trực tiếp thành công tới {CHROMECAST_IP}:8009")
+            except Exception as e:
+                pass
     else:
         print("🔍 Không có chromecast_ip trong config.json, đang tự động quét mạng LAN...")
-        chromecasts, browser = pychromecast.get_chromecasts()
-        if chromecasts:
-            cast = chromecasts[0]
-            print(f"✅ Đã tìm thấy Chromecast: {cast.name} ({cast.cast_info.host})")
+        devices, browser = pychromecast.discovery.discover_chromecasts(timeout=4.0)
+        for dev in devices:
+            try:
+                test_cast = pychromecast.get_chromecast_from_cast_info(
+                    dev,
+                    browser.zc,
+                    tries=1,
+                    timeout=3,
+                    retry_wait=1.0
+                )
+                if test_cast:
+                    cast = test_cast
+                    print(f"✅ Đã tìm thấy Chromecast: {cast.name} ({dev.host})")
+                    break
+            except Exception:
+                continue
 
     if not cast:
         print("❌ Không tìm thấy thiết bị Chromecast nào trên mạng LAN!")

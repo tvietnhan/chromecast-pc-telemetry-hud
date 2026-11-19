@@ -253,23 +253,30 @@
         .color-ram { color: #c084fc; }
         .color-ssd { color: #fbbf24; }
 
-        /* Khối hiển thị Dual GPU (2 dòng Intel & NVIDIA) */
-        .dual-gpu-wrap {
+        /* Khối hiển thị Dual GPU (2 tầng Intel & NVIDIA, mỗi tầng có sóng riêng) */
+        .dual-gpu-container {
             display: flex;
             flex-direction: column;
-            gap: 4px;
-            margin: 2px 0 1px 0;
-        }
-        .gpu-row {
-            display: flex;
+            gap: 6px;
+            margin: 2px 0 0 0;
+            flex-grow: 1;
             justify-content: space-between;
-            align-items: center;
-            background: rgba(255, 255, 255, 0.03);
+        }
+        .gpu-subcard {
+            background: rgba(255, 255, 255, 0.025);
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 8px;
             padding: 3px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
-        .gpu-row-left {
+        .gpu-meta-line {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .gpu-left {
             display: flex;
             align-items: center;
             gap: 6px;
@@ -294,28 +301,34 @@
             flex-shrink: 0;
         }
         .gpu-name {
-            font-size: 0.78rem;
+            font-size: 0.76rem;
             font-weight: 600;
             color: #cbd5e1;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .gpu-row-right {
+        .gpu-right {
             display: flex;
             align-items: baseline;
             gap: 6px;
             flex-shrink: 0;
         }
-        .gpu-load-num {
-            font-size: 1.18rem;
+        .gpu-num {
+            font-size: 1.15rem;
             font-weight: 800;
             line-height: 1;
             letter-spacing: -0.5px;
         }
-        .gpu-sub-text {
+        .color-intel { color: #38bdf8; }
+        .gpu-sub {
             font-size: 0.68rem;
             color: #94a3b8;
+        }
+        .gpu-mini-chart {
+            position: relative;
+            height: 24px;
+            width: 100%;
         }
 
         .hw-chart-box {
@@ -595,34 +608,40 @@
                 <div class="hw-pill" id="gpu-pill">Intel + RTX 3050</div>
             </div>
 
-            <div class="dual-gpu-wrap">
-                <!-- DÒNG 1: GPU INTEL -->
-                <div class="gpu-row">
-                    <div class="gpu-row-left">
-                        <span class="gpu-badge-intel">INTEL</span>
-                        <span class="gpu-name" id="gpu-intel-name">UHD Graphics</span>
+            <div class="dual-gpu-container">
+                <!-- TẦNG 1: GPU INTEL -->
+                <div class="gpu-subcard">
+                    <div class="gpu-meta-line">
+                        <div class="gpu-left">
+                            <span class="gpu-badge-intel">INTEL</span>
+                            <span class="gpu-name" id="gpu-intel-name">UHD Graphics</span>
+                        </div>
+                        <div class="gpu-right">
+                            <span class="gpu-num color-intel" id="gpu-intel-val">0%</span>
+                            <span class="gpu-sub" id="gpu-intel-sub">Display &bull; iGPU</span>
+                        </div>
                     </div>
-                    <div class="gpu-row-right">
-                        <span class="gpu-load-num" id="gpu-intel-val" style="color: #38bdf8;">0%</span>
-                        <span class="gpu-sub-text" id="gpu-intel-sub">iGPU &bull; Live</span>
+                    <div class="gpu-mini-chart">
+                        <canvas id="chartGpuIntel"></canvas>
                     </div>
                 </div>
 
-                <!-- DÒNG 2: GPU NVIDIA -->
-                <div class="gpu-row">
-                    <div class="gpu-row-left">
-                        <span class="gpu-badge-nvidia">NVIDIA</span>
-                        <span class="gpu-name" id="gpu-nvidia-name">RTX 3050</span>
+                <!-- TẦNG 2: GPU NVIDIA -->
+                <div class="gpu-subcard">
+                    <div class="gpu-meta-line">
+                        <div class="gpu-left">
+                            <span class="gpu-badge-nvidia">NVIDIA</span>
+                            <span class="gpu-name" id="gpu-nvidia-name">RTX 3050</span>
+                        </div>
+                        <div class="gpu-right">
+                            <span class="gpu-num color-gpu" id="gpu-nvidia-val">0%</span>
+                            <span class="gpu-sub" id="gpu-nvidia-sub">0 GB &bull; Standby</span>
+                        </div>
                     </div>
-                    <div class="gpu-row-right">
-                        <span class="gpu-load-num" id="gpu-nvidia-val" style="color: #10b981;">0%</span>
-                        <span class="gpu-sub-text" id="gpu-nvidia-sub">0 GB &bull; Standby</span>
+                    <div class="gpu-mini-chart">
+                        <canvas id="chartGpuNvidia"></canvas>
                     </div>
                 </div>
-            </div>
-
-            <div class="hw-chart-box" style="height: 38px;">
-                <canvas id="chartGpu"></canvas>
             </div>
         </div>
 
@@ -838,7 +857,8 @@
         }
 
         const chartCpu = new Sparkline('chartCpu', '#38bdf8', 'rgba(56, 189, 248, 0.35)', 100);
-        const chartGpu = new Sparkline('chartGpu', '#10b981', 'rgba(16, 185, 129, 0.35)', 100);
+        const chartGpuIntel = new Sparkline('chartGpuIntel', '#38bdf8', 'rgba(56, 189, 248, 0.35)', 100);
+        const chartGpuNvidia = new Sparkline('chartGpuNvidia', '#10b981', 'rgba(16, 185, 129, 0.35)', 100);
         const chartRam = new Sparkline('chartRam', '#c084fc', 'rgba(192, 132, 252, 0.35)', 100);
         const chartSsd = new Sparkline('chartSsd', '#fbbf24', 'rgba(251, 191, 36, 0.35)', 100);
         const chartDl = new Sparkline('chartDl', '#06b6d4', 'rgba(6, 182, 212, 0.35)', 50);
@@ -846,7 +866,8 @@
 
         window.addEventListener('resize', () => {
             chartCpu.resize();
-            chartGpu.resize();
+            chartGpuIntel.resize();
+            chartGpuNvidia.resize();
             chartRam.resize();
             chartSsd.resize();
             chartDl.resize();
@@ -1029,18 +1050,21 @@
                 }
                 if (data.gpu) {
                     // DÒNG 1: INTEL GPU
+                    let intelLoad = 0;
                     if (data.gpu.intel) {
-                        const intelLoad = Math.round(data.gpu.intel.load || 0);
+                        intelLoad = Math.round(data.gpu.intel.load || 0);
                         document.getElementById('gpu-intel-val').textContent = `${intelLoad}%`;
                         if (data.gpu.intel.name) {
                             document.getElementById('gpu-intel-name').textContent = data.gpu.intel.name.replace('Intel(R) ', '');
                         }
-                        document.getElementById('gpu-intel-sub').innerHTML = intelLoad > 0 ? `${intelLoad}% &bull; Active` : `Idle &bull; iGPU`;
+                        document.getElementById('gpu-intel-sub').innerHTML = intelLoad > 0 ? `${intelLoad}% &bull; Active` : `Display &bull; iGPU`;
                     }
+                    pushData(chartGpuIntel, intelLoad);
 
                     // DÒNG 2: NVIDIA GPU
+                    let nvidiaLoad = 0;
                     if (data.gpu.nvidia) {
-                        const nvidiaLoad = Math.round(data.gpu.nvidia.load || 0);
+                        nvidiaLoad = Math.round(data.gpu.nvidia.load || 0);
                         document.getElementById('gpu-nvidia-val').textContent = `${nvidiaLoad}%`;
                         if (data.gpu.nvidia.name) {
                             document.getElementById('gpu-nvidia-name').textContent = data.gpu.nvidia.name.replace(' Laptop GPU', '').replace('GeForce ', '');
@@ -1057,10 +1081,7 @@
                             if (gpuTempEl) gpuTempEl.textContent = `${Math.round(data.gpu.nvidia.temp)}°C`;
                         }
                     }
-
-                    // Biểu đồ sóng theo GPU có mức tải cao nhất
-                    const chartLoad = data.gpu.load !== undefined ? data.gpu.load : Math.max(data.gpu.intel?.load || 0, data.gpu.nvidia?.load || 0);
-                    pushData(chartGpu, chartLoad);
+                    pushData(chartGpuNvidia, nvidiaLoad);
                 }
                 if (data.ram) {
                     document.getElementById('ram-val').textContent = `${Math.round(data.ram.percent)}%`;

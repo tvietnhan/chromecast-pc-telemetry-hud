@@ -513,11 +513,11 @@
         <div class="hw-card card-cpu">
             <div class="hw-header">
                 <div class="hw-title">⚡ CPU Load</div>
-                <div class="hw-pill">12 Cores</div>
+                <div class="hw-pill" id="cpu-pill">12 Cores</div>
             </div>
             <div class="hw-value-wrap">
-                <span class="hw-num color-cpu" id="cpu-val">18%</span>
-                <span style="font-size: 0.75rem; color: #94a3b8;" id="cpu-sub">2.40 GHz</span>
+                <span class="hw-num color-cpu" id="cpu-val">0%</span>
+                <span style="font-size: 0.75rem; color: #94a3b8;" id="cpu-sub">2.00 GHz</span>
             </div>
             <div class="hw-chart-box">
                 <canvas id="chartCpu"></canvas>
@@ -527,11 +527,11 @@
         <div class="hw-card card-gpu">
             <div class="hw-header">
                 <div class="hw-title">🎮 GPU Load</div>
-                <div class="hw-pill">RTX 3050</div>
+                <div class="hw-pill" id="gpu-pill">RTX 3050</div>
             </div>
             <div class="hw-value-wrap">
-                <span class="hw-num color-gpu" id="gpu-val">12%</span>
-                <span style="font-size: 0.75rem; color: #94a3b8;" id="gpu-vram">0.6 / 4.0 GB</span>
+                <span class="hw-num color-gpu" id="gpu-val">0%</span>
+                <span style="font-size: 0.75rem; color: #94a3b8;" id="gpu-vram">0.0 / 4.0 GB</span>
             </div>
             <div class="hw-chart-box">
                 <canvas id="chartGpu"></canvas>
@@ -917,17 +917,41 @@
 
                 // Cập nhật thông số CPU, GPU, RAM, Disk, Network thực tế
                 if (data.cpu) {
-                    document.getElementById('cpu-val').textContent = `${Math.round(data.cpu.percent)}%`;
+                    const cpuPercent = Math.round(data.cpu.percent);
+                    document.getElementById('cpu-val').textContent = `${cpuPercent}%`;
                     document.getElementById('cpu-sub').textContent = data.cpu.freq;
-                    pushData(chartCpu, data.cpu.percent);
+
+                    // Đồng bộ tần số và số nhân CPU
+                    const cpuFreqEl = document.getElementById('cpu-freq');
+                    if (cpuFreqEl && data.cpu.freq) cpuFreqEl.textContent = data.cpu.freq;
+                    const cpuPillEl = document.getElementById('cpu-pill');
+                    if (cpuPillEl && data.cpu.cores) cpuPillEl.textContent = `${data.cpu.cores} Cores`;
+
+                    pushData(chartCpu, cpuPercent);
                 }
                 if (data.gpu) {
-                    document.getElementById('gpu-val').textContent = `${Math.round(data.gpu.load)}%`;
-                    document.getElementById('gpu-vram').textContent = `${(data.gpu.mem_used / 1024).toFixed(1)} / ${(data.gpu.mem_total / 1024).toFixed(1)} GB`;
-                    if (data.gpu.temp) {
-                        document.getElementById('gpu-temp').textContent = `${Math.round(data.gpu.temp)}°C`;
+                    const gpuLoad = Math.round(data.gpu.load);
+                    document.getElementById('gpu-val').textContent = `${gpuLoad}%`;
+
+                    // Hiển thị trạng thái VRAM: nếu GPU đang ngủ (Optimus) thì hiển thị rõ để người dùng biết
+                    let vramText = `${(data.gpu.mem_used / 1024).toFixed(1)} / ${(data.gpu.mem_total / 1024).toFixed(1)} GB`;
+                    if (data.gpu.status && data.gpu.status.includes('Standby')) {
+                        vramText = `0 GB (Sleep / Optimus)`;
                     }
-                    pushData(chartGpu, data.gpu.load);
+                    document.getElementById('gpu-vram').textContent = vramText;
+
+                    // Cập nhật nhãn tên GPU
+                    const gpuPillEl = document.getElementById('gpu-pill');
+                    if (gpuPillEl && data.gpu.name) {
+                        gpuPillEl.textContent = data.gpu.name.replace(' Laptop GPU', '').replace('GeForce ', '');
+                    }
+
+                    // Đồng bộ nhiệt độ GPU ở Header
+                    if (data.gpu.temp) {
+                        const gpuTempEl = document.getElementById('gpu-temp');
+                        if (gpuTempEl) gpuTempEl.textContent = `${Math.round(data.gpu.temp)}°C`;
+                    }
+                    pushData(chartGpu, gpuLoad);
                 }
                 if (data.ram) {
                     document.getElementById('ram-val').textContent = `${Math.round(data.ram.percent)}%`;

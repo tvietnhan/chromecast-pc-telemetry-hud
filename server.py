@@ -66,36 +66,49 @@ cached_stats = {
 
 stats_lock = threading.Lock()
 
+cached_gpu = {
+    "name": "RTX 3050 Laptop GPU",
+    "load": 0.0,
+    "mem_used": 0.0,
+    "mem_total": 4096.0,
+    "temp": 50.0,
+    "status": "Standby (Optimus)"
+}
+last_gpu_query = 0
+
 def query_gpu():
-    """Lấy thông số GPU qua nvidia-smi nếu có NVIDIA GPU"""
+    """Lấy thông số GPU qua nvidia-smi với timeout 2.0s và cache 2s tránh giật lag vòng lặp"""
+    global cached_gpu, last_gpu_query
+    now = time.time()
+    if now - last_gpu_query < 2.0:
+        return cached_gpu
+
+    last_gpu_query = now
     try:
         res = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"],
             stderr=subprocess.DEVNULL,
             text=True,
-            timeout=1
+            timeout=2.0
         )
         parts = [p.strip() for p in res.strip().split(",")]
-        gpu_name = parts[0]
+        gpu_name = parts[0].replace("NVIDIA GeForce ", "")
         load = float(parts[1])
         mem_u = float(parts[2])
         mem_t = float(parts[3])
         temp = float(parts[4])
-        return {
+        is_standby = (load == 0.0 and mem_u == 0.0)
+        cached_gpu = {
             "name": gpu_name,
             "load": load,
             "mem_used": mem_u,
             "mem_total": mem_t,
-            "temp": temp
+            "temp": temp,
+            "status": "Standby (Optimus)" if is_standby else "Active"
         }
+        return cached_gpu
     except Exception:
-        return {
-            "name": "Integrated GPU / Idle",
-            "load": 5.0,
-            "mem_used": 512.0,
-            "mem_total": 4096.0,
-            "temp": 42.0
-        }
+        return cached_gpu
 
 def background_collector():
     """Luồng chạy ngầm thu thập toàn bộ dữ liệu phần cứng và top 10 tiến trình"""
@@ -104,8 +117,12 @@ def background_collector():
     prev_time = time.time()
     prev_proc_io = {}
 
+    # Khởi tạo mốc tính toán CPU ban đầu cho psutil
+    psutil.cpu_percent(interval=None)
+
     while True:
         try:
+            time.sleep(1.0)
             now = time.time()
             dt = max(now - prev_time, 0.5)
 
@@ -118,10 +135,10 @@ def background_collector():
             prev_net = curr_net
             prev_time = now
 
-            # 2. CPU, RAM, Disk
-            cpu_p = psutil.cpu_percent(interval=None)
+            # 2. CPU, RAM, Disk toàn hệ thống
+            sys_cpu_percent = psutil.cpu_percent(interval=None)
             cpu_freq = psutil.cpu_freq()
-            freq_str = f"{round(cpu_freq.current / 1000, 2)} GHz" if cpu_freq else "2.4 GHz"
+            freq_str = f"{round(cpu_freq.current / 1000, 2)} GHz" if (cpu_freq and cpu_freq.current) else "2.40 GHz"
 
             ram = psutil.virtual_memory()
             ram_p = ram.percent
@@ -149,7 +166,7 @@ def background_collector():
 
                     mem_info = p.info.get('memory_info')
                     mem_mb = round(mem_info.rss / (1024 * 1024), 1) if mem_info else 0.0
-                    cpu_p = round(p.info.get('cpu_percent') or 0.0, 1)
+                    proc_cpu = round(p.info.get('cpu_percent') or 0.0, 1)
 
                     io = p.info.get('io_counters')
                     dr = 0.0
@@ -168,14 +185,14 @@ def background_collector():
                             "count": 1,
                             "download_kb": dr / 1024.0,
                             "upload_kb": dw / 1024.0,
-                            "cpu": cpu_p,
+                            "cpu": proc_cpu,
                             "ram_mb": mem_mb
                         }
                     else:
                         app_map[name]["count"] += 1
                         app_map[name]["download_kb"] += dr / 1024.0
                         app_map[name]["upload_kb"] += dw / 1024.0
-                        app_map[name]["cpu"] += cpu_p
+                        app_map[name]["cpu"] += proc_cpu
                         app_map[name]["ram_mb"] += mem_mb
                         if mem_mb > (app_map[name]["ram_mb"] - mem_mb):
                             app_map[name]["main_pid"] = pid
@@ -208,7 +225,7 @@ def background_collector():
             with stats_lock:
                 cached_stats = {
                     "cpu": {
-                        "percent": cpu_p,
+                        "percent": sys_cpu_percent,
                         "freq": freq_str,
                         "cores": psutil.cpu_count(logical=True)
                     },
@@ -236,7 +253,6 @@ def background_collector():
                 }
         except Exception:
             pass
-        time.sleep(1.0)
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True

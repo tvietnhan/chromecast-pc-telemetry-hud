@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cyberpunk PC & Smart TV Unified Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -50,6 +49,8 @@
             border-radius: 50%;
             box-shadow: 0 0 10px #10b981;
             animation: pulse 1.5s infinite;
+            transform: translateZ(0);
+            will-change: transform;
         }
         @keyframes pulse {
             0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
@@ -106,18 +107,20 @@
             font-weight: 600;
         }
 
-        /* Weather Panel */
+        /* Weather Panel (Tối ưu hóa GPU: thay thế backdrop-filter bằng solid dark glass) */
         .weather-panel {
             flex-grow: 1;
-            background: rgba(255, 255, 255, 0.035);
+            background: rgba(18, 24, 38, 0.90);
             border: 1px solid rgba(255, 255, 255, 0.09);
             border-radius: 18px;
             padding: 8px 18px;
             display: flex;
             align-items: center;
             gap: 16px;
-            backdrop-filter: blur(20px);
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            transform: translateZ(0);
+            backface-visibility: hidden;
+            contain: content;
         }
         .weather-current {
             display: flex;
@@ -197,14 +200,16 @@
             margin-bottom: 8px;
         }
         .hw-card {
-            background: rgba(255, 255, 255, 0.03);
-            backdrop-filter: blur(16px);
+            background: rgba(18, 24, 38, 0.90);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 14px;
             padding: 8px 14px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+            contain: content;
         }
         .card-cpu { border-top: 3px solid #38bdf8; }
         .card-gpu { border-top: 3px solid #10b981; }
@@ -272,8 +277,7 @@
             gap: 10px;
         }
         .net-card {
-            background: rgba(255, 255, 255, 0.035);
-            backdrop-filter: blur(16px);
+            background: rgba(18, 24, 38, 0.90);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 14px;
             padding: 10px 14px;
@@ -281,6 +285,9 @@
             flex-direction: column;
             justify-content: space-between;
             flex: 1;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+            contain: content;
         }
         .card-dl { border-left: 4px solid #06b6d4; }
         .card-ul { border-left: 4px solid #ec4899; }
@@ -343,14 +350,16 @@
 
         /* Cột phải: Bảng quản lý tiến trình mạng */
         .proc-card {
-            background: rgba(255, 255, 255, 0.035);
+            background: rgba(18, 24, 38, 0.90);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 14px;
             padding: 10px 16px;
-            backdrop-filter: blur(20px);
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+            contain: content;
         }
         .proc-top {
             display: flex;
@@ -376,6 +385,7 @@
         }
         .proc-table {
             width: 100%;
+            table-layout: fixed;
             border-collapse: collapse;
             text-align: left;
         }
@@ -391,6 +401,9 @@
             padding: 6px 8px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.03);
             color: #cbd5e1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .proc-table tr:hover td {
             background: rgba(255, 255, 255, 0.04);
@@ -401,6 +414,12 @@
             gap: 8px;
             font-weight: 600;
             color: #f8fafc;
+            overflow: hidden;
+        }
+        .proc-name-cell > div:last-child {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .app-icon {
             width: 22px;
@@ -411,6 +430,7 @@
             align-items: center;
             justify-content: center;
             font-size: 0.75rem;
+            flex-shrink: 0;
         }
         .speed-bar-container {
             width: 85px;
@@ -423,9 +443,18 @@
         .speed-bar-fill {
             height: 100%;
             border-radius: 2px;
+            transition: width 0.3s ease;
         }
         .fill-dl { background: #06b6d4; }
         .fill-ul { background: #ec4899; }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+        }
 
         /* Footer */
         .footer {
@@ -471,7 +500,7 @@
                 <div class="weather-icon" id="cur-weather-icon">🌤️</div>
                 <div>
                     <div class="weather-temp" id="cur-weather-temp">32°C</div>
-                    <div class="weather-desc" id="cur-weather-desc">Nắng ấm &bull; 62% ẩm</div>
+                    <div class="weather-desc" id="cur-weather-desc">Nhiệt độ &bull; 62% ẩm</div>
                     <div class="weather-loc" id="cur-weather-loc">📍 TP. Hồ Chí Minh</div>
                 </div>
             </div>
@@ -583,7 +612,7 @@
                     <span class="proc-badge" id="active-proc-count">Top 10 Apps</span>
                 </div>
                 <div style="font-size: 0.75rem; color: #64748b;">
-                    Sắp xếp theo RAM &bull; Polling 800ms
+                    Sắp xếp theo RAM &bull; Realtime Sync
                 </div>
             </div>
 
@@ -591,15 +620,17 @@
                 <table class="proc-table">
                     <thead>
                         <tr>
-                            <th>Ứng dụng</th>
-                            <th>PID</th>
-                            <th>📥 Download</th>
-                            <th>📤 Upload</th>
-                            <th>CPU</th>
-                            <th>RAM</th>
+                            <th style="width: 32%;">Ứng dụng</th>
+                            <th style="width: 12%;">PID</th>
+                            <th style="width: 18%;">📥 Download</th>
+                            <th style="width: 18%;">📤 Upload</th>
+                            <th style="width: 10%;">CPU</th>
+                            <th style="width: 10%;">RAM</th>
                         </tr>
                     </thead>
-                    <tbody id="proc-table-body"></tbody>
+                    <tbody id="proc-table-body">
+                        <!-- 10 dòng được khởi tạo 1 lần và cập nhật in-place, triệt tiêu hoàn toàn giật chớp -->
+                    </tbody>
                 </table>
             </div>
         </div>
@@ -612,6 +643,7 @@
     </div>
 
     <script>
+        // 1. Đồng hồ thời gian thực
         function updateClock() {
             const now = new Date();
             const h = String(now.getHours()).padStart(2, '0');
@@ -639,53 +671,102 @@
             document.getElementById('uptime').textContent = `${h}:${m}:${s}`;
         }, 1000);
 
+        // 2. Native Canvas Sparkline (Siêu nhẹ, không giật chớp, không phụ thuộc thư viện nặng)
         const POINTS = 20;
-        const emptyLabels = Array(POINTS).fill('');
+        class Sparkline {
+            constructor(canvasId, lineColor, fillColor, maxY = 100) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
+                this.lineColor = lineColor;
+                this.fillColor = fillColor;
+                this.maxY = maxY;
+                this.data = Array(POINTS).fill(15);
+                this.resize();
+            }
 
-        function createWaveChart(canvasId, lineColor, fillColor, maxY = 100) {
-            const ctx = document.getElementById(canvasId).getContext('2d');
-            const gradient = ctx.createLinearGradient(0, 0, 0, 60);
-            gradient.addColorStop(0, fillColor);
-            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-            return new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: [...emptyLabels],
-                    datasets: [{
-                        data: Array(POINTS).fill(15),
-                        borderColor: lineColor,
-                        borderWidth: 2,
-                        backgroundColor: gradient,
-                        fill: true,
-                        tension: 0.45,
-                        pointRadius: 0,
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: false,
-                    plugins: { legend: { display: false }, tooltip: { enabled: false } },
-                    scales: {
-                        x: { display: false },
-                        y: { min: 0, max: maxY, display: false }
-                    }
+            resize() {
+                if (!this.canvas) return;
+                const rect = this.canvas.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                this.width = rect.width || 200;
+                this.height = rect.height || 52;
+                this.canvas.width = Math.round(this.width * dpr);
+                this.canvas.height = Math.round(this.height * dpr);
+                if (this.ctx) {
+                    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    this.ctx.scale(dpr, dpr);
                 }
-            });
+                this.draw();
+            }
+
+            push(val) {
+                this.data.shift();
+                this.data.push(val);
+                this.draw();
+            }
+
+            draw() {
+                if (!this.ctx || !this.width || !this.height) return;
+                const ctx = this.ctx;
+                const w = this.width;
+                const h = this.height;
+                const len = this.data.length;
+
+                ctx.clearRect(0, 0, w, h);
+
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, this.fillColor);
+                grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+                const pts = [];
+                const step = w / (len - 1);
+                for (let i = 0; i < len; i++) {
+                    const clamped = Math.max(0, Math.min(this.maxY, this.data[i]));
+                    const y = h - (clamped / this.maxY) * (h - 8) - 4;
+                    pts.push({ x: i * step, y: y });
+                }
+
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for (let i = 0; i < len - 1; i++) {
+                    const xc = (pts[i].x + pts[i + 1].x) / 2;
+                    const yc = (pts[i].y + pts[i + 1].y) / 2;
+                    ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+                }
+                ctx.lineTo(pts[len - 1].x, pts[len - 1].y);
+
+                ctx.strokeStyle = this.lineColor;
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+
+                ctx.lineTo(w, h);
+                ctx.lineTo(0, h);
+                ctx.closePath();
+                ctx.fillStyle = grad;
+                ctx.fill();
+            }
         }
 
-        const chartCpu = createWaveChart('chartCpu', '#38bdf8', 'rgba(56, 189, 248, 0.35)', 100);
-        const chartGpu = createWaveChart('chartGpu', '#10b981', 'rgba(16, 185, 129, 0.35)', 100);
-        const chartRam = createWaveChart('chartRam', '#c084fc', 'rgba(192, 132, 252, 0.35)', 100);
-        const chartSsd = createWaveChart('chartSsd', '#fbbf24', 'rgba(251, 191, 36, 0.35)', 100);
-        const chartDl = createWaveChart('chartDl', '#06b6d4', 'rgba(6, 182, 212, 0.35)', 50);
-        const chartUl = createWaveChart('chartUl', '#ec4899', 'rgba(236, 72, 153, 0.35)', 20);
+        const chartCpu = new Sparkline('chartCpu', '#38bdf8', 'rgba(56, 189, 248, 0.35)', 100);
+        const chartGpu = new Sparkline('chartGpu', '#10b981', 'rgba(16, 185, 129, 0.35)', 100);
+        const chartRam = new Sparkline('chartRam', '#c084fc', 'rgba(192, 132, 252, 0.35)', 100);
+        const chartSsd = new Sparkline('chartSsd', '#fbbf24', 'rgba(251, 191, 36, 0.35)', 100);
+        const chartDl = new Sparkline('chartDl', '#06b6d4', 'rgba(6, 182, 212, 0.35)', 50);
+        const chartUl = new Sparkline('chartUl', '#ec4899', 'rgba(236, 72, 153, 0.35)', 20);
+
+        window.addEventListener('resize', () => {
+            chartCpu.resize();
+            chartGpu.resize();
+            chartRam.resize();
+            chartSsd.resize();
+            chartDl.resize();
+            chartUl.resize();
+        });
 
         function pushData(chart, val) {
-            chart.data.datasets[0].data.shift();
-            chart.data.datasets[0].data.push(val);
-            chart.update();
+            chart.push(val);
         }
 
         function getAppIcon(name) {
@@ -713,59 +794,85 @@
             return `${Math.round(mb)} MB`;
         }
 
-        let vCpu = 22.5;
-        let vGpu = 14.0;
-        let vRam = 81.2;
-        let vSsd = 70.0;
-
-        let mockProcesses = [
-            { name: "HD-Player.exe", pid: 26220, download_kb: 120.0, upload_kb: 45.0, cpu: 3.5, ram_mb: 2771.0 },
-            { name: "msedge.exe (36)", pid: 1696, download_kb: 1450.0, upload_kb: 320.0, cpu: 5.2, ram_mb: 1587.0 },
-            { name: "svchost.exe (92)", pid: 1164, download_kb: 95.0, upload_kb: 35.0, cpu: 1.2, ram_mb: 1550.0 },
-            { name: "Antigravity.exe (10)", pid: 2696, download_kb: 980.0, upload_kb: 410.0, cpu: 4.8, ram_mb: 1441.0 },
-            { name: "Zalo.exe (7)", pid: 5744, download_kb: 65.0, upload_kb: 20.0, cpu: 0.9, ram_mb: 511.0 },
-            { name: "msedgewebview2.exe (19)", pid: 11068, download_kb: 40.0, upload_kb: 15.0, cpu: 0.8, ram_mb: 450.0 },
-            { name: "language_server.exe (2)", pid: 31008, download_kb: 420.0, upload_kb: 95.0, cpu: 2.1, ram_mb: 395.0 },
-            { name: "MsMpEng.exe", pid: 5364, download_kb: 0.0, upload_kb: 0.0, cpu: 1.1, ram_mb: 301.0 },
-            { name: "chrome.exe (7)", pid: 13488, download_kb: 180.0, upload_kb: 50.0, cpu: 1.5, ram_mb: 281.0 },
-            { name: "NVIDIA Overlay.exe (5)", pid: 13140, download_kb: 0.0, upload_kb: 0.0, cpu: 0.4, ram_mb: 269.0 }
-        ];
-
-        function renderProcessTable(procs) {
+        // 3. Khởi tạo sẵn 10 dòng trong bảng tiến trình để cập nhật in-place (không bao giờ phá hủy DOM)
+        function initProcessTable() {
             const tbody = document.getElementById('proc-table-body');
-            document.getElementById('active-proc-count').textContent = `Top ${procs.length} Apps`;
             let html = '';
-            procs.forEach(p => {
-                const dlPercent = Math.min((p.download_kb / 2500) * 100, 100);
-                const ulPercent = Math.min((p.upload_kb / 800) * 100, 100);
-
+            for (let i = 0; i < 10; i++) {
                 html += `
-                    <tr>
+                    <tr id="proc-row-${i}" style="display: none;">
                         <td>
                             <div class="proc-name-cell">
-                                <div class="app-icon">${getAppIcon(p.name)}</div>
-                                <div>${p.name}</div>
+                                <div class="app-icon" id="proc-icon-${i}">⚙️</div>
+                                <div id="proc-name-${i}">--</div>
                             </div>
                         </td>
-                        <td style="color: #64748b; font-family: monospace;">#${p.pid}</td>
+                        <td style="color: #64748b; font-family: monospace;" id="proc-pid-${i}">#--</td>
                         <td>
-                            <div style="color: #22d3ee; font-weight: 700;">${formatSpeed(p.download_kb)}</div>
+                            <div style="color: #22d3ee; font-weight: 700;" id="proc-dl-${i}">0 KB/s</div>
                             <div class="speed-bar-container">
-                                <div class="speed-bar-fill fill-dl" style="width: ${dlPercent}%;"></div>
+                                <div class="speed-bar-fill fill-dl" id="proc-dl-bar-${i}" style="width: 0%;"></div>
                             </div>
                         </td>
                         <td>
-                            <div style="color: #f472b6; font-weight: 700;">${formatSpeed(p.upload_kb)}</div>
+                            <div style="color: #f472b6; font-weight: 700;" id="proc-ul-${i}">0 KB/s</div>
                             <div class="speed-bar-container">
-                                <div class="speed-bar-fill fill-ul" style="width: ${ulPercent}%;"></div>
+                                <div class="speed-bar-fill fill-ul" id="proc-ul-bar-${i}" style="width: 0%;"></div>
                             </div>
                         </td>
-                        <td style="color: #38bdf8; font-weight: 600;">${p.cpu}%</td>
-                        <td style="color: #cbd5e1; font-weight: 600;">${formatRam(p.ram_mb)}</td>
+                        <td style="color: #38bdf8; font-weight: 600;" id="proc-cpu-${i}">0.0%</td>
+                        <td style="color: #cbd5e1; font-weight: 600;" id="proc-ram-${i}">0 MB</td>
                     </tr>
                 `;
-            });
+            }
             tbody.innerHTML = html;
+        }
+        initProcessTable();
+
+        function renderProcessTable(procs) {
+            document.getElementById('active-proc-count').textContent = `Top ${procs.length} Apps`;
+            for (let i = 0; i < 10; i++) {
+                const row = document.getElementById(`proc-row-${i}`);
+                if (!row) continue;
+                if (i < procs.length) {
+                    row.style.display = '';
+                    const p = procs[i];
+                    const dlPercent = Math.min((p.download_kb / 2500) * 100, 100);
+                    const ulPercent = Math.min((p.upload_kb / 800) * 100, 100);
+
+                    const iconEl = document.getElementById(`proc-icon-${i}`);
+                    const nameEl = document.getElementById(`proc-name-${i}`);
+                    const pidEl = document.getElementById(`proc-pid-${i}`);
+                    const dlEl = document.getElementById(`proc-dl-${i}`);
+                    const dlBarEl = document.getElementById(`proc-dl-bar-${i}`);
+                    const ulEl = document.getElementById(`proc-ul-${i}`);
+                    const ulBarEl = document.getElementById(`proc-ul-bar-${i}`);
+                    const cpuEl = document.getElementById(`proc-cpu-${i}`);
+                    const ramEl = document.getElementById(`proc-ram-${i}`);
+
+                    const icon = getAppIcon(p.name);
+                    if (iconEl.textContent !== icon) iconEl.textContent = icon;
+                    if (nameEl.textContent !== p.name) nameEl.textContent = p.name;
+                    const pidStr = `#${p.pid}`;
+                    if (pidEl.textContent !== pidStr) pidEl.textContent = pidStr;
+
+                    const dlStr = formatSpeed(p.download_kb);
+                    if (dlEl.textContent !== dlStr) dlEl.textContent = dlStr;
+                    dlBarEl.style.width = `${dlPercent}%`;
+
+                    const ulStr = formatSpeed(p.upload_kb);
+                    if (ulEl.textContent !== ulStr) ulEl.textContent = ulStr;
+                    ulBarEl.style.width = `${ulPercent}%`;
+
+                    const cpuStr = `${p.cpu}%`;
+                    if (cpuEl.textContent !== cpuStr) cpuEl.textContent = cpuStr;
+
+                    const ramStr = formatRam(p.ram_mb);
+                    if (ramEl.textContent !== ramStr) ramEl.textContent = ramStr;
+                } else {
+                    row.style.display = 'none';
+                }
+            }
         }
 
         let isLiveTelemetry = false;
@@ -780,7 +887,9 @@
                 // Cập nhật thông tin Header từ cấu hình
                 if (data.config) {
                     if (data.config.device_label) {
-                        document.getElementById('hud-title').innerHTML = `UNIFIED ALL-IN-ONE HUD &bull; ${data.config.device_label}`;
+                        const titleEl = document.getElementById('hud-title');
+                        const titleStr = `UNIFIED ALL-IN-ONE HUD &bull; ${data.config.device_label}`;
+                        if (titleEl.innerHTML !== titleStr) titleEl.innerHTML = titleStr;
                     }
                     if (data.config.host_ip) {
                         document.getElementById('hud-host-ip').textContent = data.config.host_ip;
@@ -790,7 +899,9 @@
                     }
                     if (data.config.weather) {
                         if (data.config.weather.city) {
-                            document.getElementById('cur-weather-loc').textContent = `📍 ${data.config.weather.city}`;
+                            const curLocEl = document.getElementById('cur-weather-loc');
+                            const locStr = `📍 ${data.config.weather.city}`;
+                            if (curLocEl.textContent !== locStr) curLocEl.textContent = locStr;
                         }
                         if (data.config.weather.latitude && data.config.weather.longitude) {
                             weatherLat = data.config.weather.latitude;
@@ -813,6 +924,9 @@
                 if (data.gpu) {
                     document.getElementById('gpu-val').textContent = `${Math.round(data.gpu.load)}%`;
                     document.getElementById('gpu-vram').textContent = `${(data.gpu.mem_used / 1024).toFixed(1)} / ${(data.gpu.mem_total / 1024).toFixed(1)} GB`;
+                    if (data.gpu.temp) {
+                        document.getElementById('gpu-temp').textContent = `${Math.round(data.gpu.temp)}°C`;
+                    }
                     pushData(chartGpu, data.gpu.load);
                 }
                 if (data.ram) {
@@ -822,6 +936,7 @@
                 }
                 if (data.disk) {
                     document.getElementById('ssd-val').textContent = `${Math.round(data.disk.percent)}%`;
+                    document.getElementById('ssd-detail').textContent = `${data.disk.free} Free`;
                     pushData(chartSsd, data.disk.percent);
                 }
                 if (data.network) {
@@ -837,10 +952,28 @@
             }
         }
 
+        // Mock fallback khi mở file trực tiếp không qua HTTP server
+        let vCpu = 22.5;
+        let vGpu = 14.0;
+        let vRam = 81.2;
+        let vSsd = 70.0;
+        let mockProcesses = [
+            { name: "HD-Player.exe", pid: 26220, download_kb: 120.0, upload_kb: 45.0, cpu: 3.5, ram_mb: 2771.0 },
+            { name: "msedge.exe (36)", pid: 1696, download_kb: 1450.0, upload_kb: 320.0, cpu: 5.2, ram_mb: 1587.0 },
+            { name: "svchost.exe (92)", pid: 1164, download_kb: 95.0, upload_kb: 35.0, cpu: 1.2, ram_mb: 1550.0 },
+            { name: "Antigravity.exe (10)", pid: 2696, download_kb: 980.0, upload_kb: 410.0, cpu: 4.8, ram_mb: 1441.0 },
+            { name: "Zalo.exe (7)", pid: 5744, download_kb: 65.0, upload_kb: 20.0, cpu: 0.9, ram_mb: 511.0 },
+            { name: "msedgewebview2.exe (19)", pid: 11068, download_kb: 40.0, upload_kb: 15.0, cpu: 0.8, ram_mb: 450.0 },
+            { name: "language_server.exe (2)", pid: 31008, download_kb: 420.0, upload_kb: 95.0, cpu: 2.1, ram_mb: 395.0 },
+            { name: "MsMpEng.exe", pid: 5364, download_kb: 0.0, upload_kb: 0.0, cpu: 1.1, ram_mb: 301.0 },
+            { name: "chrome.exe (7)", pid: 13488, download_kb: 180.0, upload_kb: 50.0, cpu: 1.5, ram_mb: 281.0 },
+            { name: "NVIDIA Overlay.exe (5)", pid: 13140, download_kb: 0.0, upload_kb: 0.0, cpu: 0.4, ram_mb: 269.0 }
+        ];
+
+        // Chu kỳ cập nhật tối ưu 1500ms (1.5 giây) đồng bộ hoàn hảo với Server psutil, không gây nghẽn buffer màn hình
         setInterval(async () => {
             const hasLive = await fetchLiveTelemetry();
             if (!hasLive) {
-                // Chế độ mô phỏng fallback khi mở trực tiếp file html không qua server
                 mockProcesses[0].download_kb = Math.max(80, mockProcesses[0].download_kb + (Math.random() * 40 - 20));
                 mockProcesses[1].download_kb = Math.max(500, mockProcesses[1].download_kb + (Math.random() * 200 - 100));
                 mockProcesses[1].upload_kb = Math.max(150, mockProcesses[1].upload_kb + (Math.random() * 80 - 40));
@@ -880,12 +1013,19 @@
                 document.getElementById('dl-speed').textContent = `${totalDlMb.toFixed(2)} MB/s`;
                 document.getElementById('ul-speed').textContent = `${totalUlMb.toFixed(2)} MB/s`;
 
-                // Giữ sắp xếp theo RAM
                 mockProcesses.sort((a, b) => b.ram_mb - a.ram_mb);
                 renderProcessTable(mockProcesses);
             }
-        }, 800);
+        }, 1500);
 
+        // Gọi ngay 1 lần lúc vừa tải trang
+        fetchLiveTelemetry().then(hasLive => {
+            if (!hasLive) {
+                renderProcessTable(mockProcesses);
+            }
+        });
+
+        // 4. Thời tiết
         function getWeatherIcon(code, isNight = false) {
             if (code === 0) return isNight ? '🌙' : '☀️';
             if (code === 1 || code === 2) return isNight ? '☁️' : '🌤️';
@@ -904,7 +1044,7 @@
                 const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${weatherLat}&longitude=${weatherLon}&current=temperature_2m,relative_humidity_2m,weather_code&hourly=temperature_2m,precipitation_probability,weather_code&timezone=auto`);
                 if (!res.ok) return;
                 const data = await res.json();
-                
+
                 const currentTemp = Math.round(data.current.temperature_2m);
                 const currentHum = data.current.relative_humidity_2m;
                 document.getElementById('cur-weather-temp').textContent = `${currentTemp}°C`;
